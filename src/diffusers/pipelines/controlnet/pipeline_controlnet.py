@@ -985,18 +985,29 @@ class StableDiffusionControlNetPipeline(
             self.controlnet.to("cpu")
             torch.cuda.empty_cache()
 
-        if not output_type == "latent":
+        if output_type == 'pil':  # ********** not output_type == "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
             image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
+            latents_output = None
+        elif output_type == "both": # ********* Added
+            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
+            image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
+            latents_output = latents
         else:
             image = latents
+            latents_output = None
             has_nsfw_concept = None
 
         if has_nsfw_concept is None:
             do_denormalize = [True] * image.shape[0]
+        elif output_type == "both": # ********** Added
+            do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
         else:
             do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
-
+        
+        # ************* To postprocess image
+        if output_type == "both":
+            output_type = "pil" 
         image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
 
         # Offload last model to CPU
@@ -1005,5 +1016,4 @@ class StableDiffusionControlNetPipeline(
 
         if not return_dict:
             return (image, has_nsfw_concept)
-
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+        return StableDiffusionPipelineOutput(images=image, latents=latents_output, nsfw_content_detected=has_nsfw_concept)
